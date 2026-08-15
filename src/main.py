@@ -24,8 +24,6 @@ def choose_candidates(cfg, state):
     chosen = []
     reuse_days = cfg["generation"]["min_days_before_source_reuse"]
 
-    # Only genuinely fresh discovery results may influence the current-trend context.
-    # Older Creative Commons material exists only as an evidence/source pool.
     trend_candidates = [
         candidate
         for candidate in candidates
@@ -64,6 +62,16 @@ def choose_candidates(cfg, state):
 
         chosen.append(candidate)
 
+    # Captioned sources are cheaper/faster. Non-captioned sources remain eligible
+    # because transcript.py can fall back to free CPU Whisper transcription.
+    chosen.sort(
+        key=lambda candidate: (
+            bool(candidate.get("has_captions")),
+            candidate["viral_score"],
+        ),
+        reverse=True,
+    )
+
     print(
         "DISCOVERY SUMMARY: "
         f"{len(trend_candidates)} fresh trend signals, "
@@ -76,6 +84,7 @@ def choose_candidates(cfg, state):
 def process_one(video, cfg, dry_run=False, render_only=False):
     print(
         f"SELECTED: {video['title']} | {video['rights_reason']} "
+        f"| captions={video.get('has_captions', False)} "
         f"| score={video['viral_score']}"
     )
 
@@ -83,9 +92,7 @@ def process_one(video, cfg, dry_run=False, render_only=False):
         workdir = Path(td)
         transcript = fetch_subtitles(video["url"], workdir)
         if not transcript:
-            raise RuntimeError(
-                "No usable English subtitles; skipping to keep the pipeline lightweight."
-            )
+            raise RuntimeError("No usable speech transcript could be produced.")
 
         plan = plan_short(video, transcript, cfg)
         print("PLAN:", json.dumps(plan, indent=2))
@@ -162,11 +169,11 @@ def main():
 
     if not candidates:
         print("No rights-cleared candidates found this run.")
-        save_state(state)
         return
 
     limit = cfg["generation"]["max_posts_per_run"]
     completed = 0
+    state_dirty = False
 
     for video in candidates:
         if completed >= limit:
@@ -175,7 +182,7 @@ def main():
             result = process_one(
                 video, cfg, dry_run=args.dry_run, render_only=args.render_only
             )
-            if not args.dry_run:
+            if not args.dry_run and not args.render_only:
                 mark_source_used(
                     state,
                     video["video_id"],
@@ -187,12 +194,16 @@ def main():
                         "file": result.get("file"),
                     },
                 )
+                state_dirty = True
             completed += 1
         except Exception as exc:
             print(f"FAILED {video['video_id']}: {exc}")
             traceback.print_exc()
 
-    save_state(state)
+    if state_dirty:
+        save_state(state)
+    else:
+        print("No successful published post changed persistent state.")
 
 
 if __name__ == "__main__":
