@@ -1,0 +1,34 @@
+{
+  "topics": [
+    "business psychology",
+    "science discoveries",
+    "technology explained",
+    "creator economy"
+  ],
+  "discovery": {
+    "lookback_hours": 72,
+    "results_per_topic": 12,
+    "max_candidates": 30,
+    "min_views": 1000,
+    "region_code": "US"
+  },
+  "rights": {
+    "allow_creative_commons": true,
+    "allowed_channel_ids": [],
+    "trend_only_channel_ids": []
+  },
+  "generation": {
+    "target_seconds_min": 30,
+    "target_seconds_max": 55,
+    "max_posts_per_run": 1,
+    "voice": "en_US-lessac-medium",
+    "source_audio_volume": 0.1,
+    "min_days_before_source_reuse": 30
+  },
+  "publishing": {
+    "youtube": true,
+    "instagram": false,
+    "facebook": false,
+    "tiktok": false
+  }
+}
