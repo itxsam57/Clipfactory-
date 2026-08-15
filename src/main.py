@@ -1,5 +1,9 @@
 from __future__ import annotations
-import argparse, json, tempfile, traceback
+
+import argparse
+import json
+import tempfile
+import traceback
 from pathlib import Path
 
 from .config import load_config
@@ -14,32 +18,60 @@ from .publishers import youtube as youtube_pub
 from .publishers import meta as meta_pub
 from .publishers import tiktok as tiktok_pub
 
+
 def choose_candidates(cfg, state):
     candidates = discover(cfg)
     chosen = []
     reuse_days = cfg["generation"]["min_days_before_source_reuse"]
+
+    # Only genuinely fresh discovery results may influence the current-trend context.
+    # Older Creative Commons material exists only as an evidence/source pool.
+    trend_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate.get("discovery_class")
+        in {"trend", "trend-and-creative-commons"}
+    ]
     trend_context = [
         {
-            "title": c["title"],
-            "creator": c["channel_title"],
-            "score": c["viral_score"],
+            "title": candidate["title"],
+            "creator": candidate["channel_title"],
+            "score": candidate["viral_score"],
+            "matched_topics": candidate.get("matched_topics", []),
         }
-        for c in candidates[:10]
+        for candidate in trend_candidates[:10]
     ]
 
-    for c in candidates:
-        c["trend_context"] = trend_context
-        allowed, reason = is_download_allowed(c, cfg)
-        c["download_allowed"] = allowed
-        c["rights_reason"] = reason
+    source_pool_count = 0
+    for candidate in candidates:
+        candidate["trend_context"] = trend_context
+        allowed, reason = is_download_allowed(candidate, cfg)
+        candidate["download_allowed"] = allowed
+        candidate["rights_reason"] = reason
+
         if not allowed:
-            print(f"TREND ONLY: {c['title']} ({reason})")
+            if candidate.get("discovery_class") in {
+                "trend",
+                "trend-and-creative-commons",
+            }:
+                print(f"TREND ONLY: {candidate['title']} ({reason})")
             continue
-        if source_recently_used(c["video_id"], state, reuse_days):
-            print(f"SKIP RECENT SOURCE: {c['video_id']}")
+
+        source_pool_count += 1
+        if source_recently_used(candidate["video_id"], state, reuse_days):
+            print(f"SKIP RECENT SOURCE: {candidate['video_id']}")
             continue
-        chosen.append(c)
+
+        chosen.append(candidate)
+
+    print(
+        "DISCOVERY SUMMARY: "
+        f"{len(trend_candidates)} fresh trend signals, "
+        f"{source_pool_count} rights-cleared source candidates, "
+        f"{len(chosen)} available after duplicate checks."
+    )
     return chosen
+
 
 def process_one(video, cfg, dry_run=False, render_only=False):
     print(
@@ -100,13 +132,9 @@ def process_one(video, cfg, dry_run=False, render_only=False):
             staged_url, staged_key = meta_pub.stage_public(permanent)
             try:
                 if pub.get("instagram"):
-                    posts.append(
-                        meta_pub.publish_instagram_reel(staged_url, plan)
-                    )
+                    posts.append(meta_pub.publish_instagram_reel(staged_url, plan))
                 if pub.get("facebook"):
-                    posts.append(
-                        meta_pub.publish_facebook_reel(staged_url, plan)
-                    )
+                    posts.append(meta_pub.publish_facebook_reel(staged_url, plan))
             finally:
                 if staged_key:
                     meta_pub.cleanup(staged_key)
@@ -121,11 +149,12 @@ def process_one(video, cfg, dry_run=False, render_only=False):
             "posts": posts,
         }
 
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--render-only", action="store_true")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--render-only", action="store_true")
+    args = parser.parse_args()
 
     cfg = load_config()
     state = load_state()
@@ -164,6 +193,7 @@ def main():
             traceback.print_exc()
 
     save_state(state)
+
 
 if __name__ == "__main__":
     main()
