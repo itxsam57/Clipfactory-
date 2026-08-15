@@ -4,27 +4,31 @@
 
 The heavy work runs on `ubuntu-latest` GitHub Actions. Your PC is only needed for the one-time browser OAuth bootstrap.
 
-## Subtitle-first
+## Transcript-first, transcription fallback
 
-The system does not download an entire long video before deciding what it wants.
-
-It gets subtitles first, selects a timestamp, then downloads only that permitted section.
+The system tries creator/automatic caption tracks first because they are fast and cheap. If a rights-cleared source has no usable caption track, it downloads audio and transcribes locally on the GitHub runner with CPU Whisper instead of depending on a paid speech API.
 
 ## No face tracking by default
 
-Center crop is deliberately used to keep CPU and dependencies low. Face-aware tracking can be added later if the channel earns enough to justify the extra complexity.
+Center crop is deliberately used to keep CPU and dependencies low. Face-aware tracking can be added later after the pipeline proves it can earn.
 
 ## Original narration
 
 Narration is generated locally with Piper TTS rather than paying a voice API.
 
+## CI safety
+
+Normal pushes to `main` install dependencies and run tests only. They do not publish content. Scheduled runs and manual runs execute the live factory. A commit tagged `[factory-test]` is reserved for a deliberate controlled end-to-end integration run.
+
+Persistent state changes only after a successful published post, avoiding no-op state commits and reducing Git races.
+
 ## Fail closed
 
 If:
 - rights are unclear,
-- subtitles are missing,
 - credentials are missing,
-- a platform approval is not available,
+- source speech cannot be transcribed,
+- or a platform approval is not available,
 
 the system skips/fails rather than trying to bypass a platform.
 
