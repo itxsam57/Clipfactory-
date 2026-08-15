@@ -1,0 +1,83 @@
+name: ClipFactory
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+    - cron: "17 15 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: clipfactory
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest -q
+
+      - name: Run factory
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
+          META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+          META_GRAPH_VERSION: ${{ vars.META_GRAPH_VERSION || 'v24.0' }}
+
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+          TIKTOK_OPEN_ID: ${{ secrets.TIKTOK_OPEN_ID }}
+        run: python -m src.main
+
+      - name: Persist state
+        run: |
+          if git diff --quiet -- data/state.json; then
+            exit 0
+          fi
+          git config user.name "clipfactory-bot"
+          git config user.email "clipfactory-bot@users.noreply.github.com"
+          git add data/state.json
+          git commit -m "chore: update clipfactory state [skip ci]"
+          git push
+
+      - name: Upload rendered output for debugging
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipfactory-output
+          path: output/
+          if-no-files-found: ignore
+          retention-days: 2
