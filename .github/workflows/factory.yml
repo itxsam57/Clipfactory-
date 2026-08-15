@@ -13,8 +13,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: clipfactory
-  cancel-in-progress: false
+  group: clipfactory-${{ github.event_name == 'push' && 'validation' || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   run:
@@ -23,6 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -43,6 +45,7 @@ jobs:
         run: pytest -q
 
       - name: Run factory
+        if: github.event_name != 'push' || contains(github.event.head_commit.message, '[factory-test]')
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -68,18 +71,22 @@ jobs:
         run: python -m src.main
 
       - name: Persist state
+        if: github.event_name != 'push' || contains(github.event.head_commit.message, '[factory-test]')
         run: |
           if git diff --quiet -- data/state.json; then
+            echo "No successful post changed state."
             exit 0
           fi
           git config user.name "clipfactory-bot"
           git config user.email "clipfactory-bot@users.noreply.github.com"
           git add data/state.json
           git commit -m "chore: update clipfactory state [skip ci]"
-          git push
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
 
       - name: Upload rendered output for debugging
-        if: always()
+        if: always() && (github.event_name != 'push' || contains(github.event.head_commit.message, '[factory-test]'))
         uses: actions/upload-artifact@v4
         with:
           name: clipfactory-output
