@@ -10,6 +10,10 @@
     "results_per_topic": 12,
     "max_candidates": 30,
     "min_views": 1000,
+    "source_lookback_days": 730,
+    "source_results_per_topic": 12,
+    "max_source_candidates": 40,
+    "source_min_views": 100,
     "region_code": "US"
   },
   "rights": {
