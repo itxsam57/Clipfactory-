@@ -45,20 +45,7 @@ def _search(
 
 
 def discover(cfg: dict) -> list[dict]:
-    """Discover two intentionally separate pools.
-
-    Trend pool:
-        Very recent, high-performing YouTube videos. These are signals only unless
-        they independently pass the rights gate.
-
-    Source pool:
-        A wider Creative Commons search window. These videos can provide source
-        evidence while the fresh trend pool tells Gemini what audiences are
-        responding to now.
-
-    Keeping these pools separate avoids the bad assumption that a currently viral
-    video must itself be reusable for ClipFactory to make a timely original Short.
-    """
+    """Discover fresh trend signals and a wider rights-cleared source pool."""
 
     key = env("YOUTUBE_API_KEY", required=True)
     dc = cfg["discovery"]
@@ -103,14 +90,13 @@ def discover(cfg: dict) -> list[dict]:
 
     trend_ids = trend_ids[: dc["max_candidates"]]
     source_ids = source_ids[: dc.get("max_source_candidates", 40)]
-
     ids = trend_ids + [video_id for video_id in source_ids if video_id not in trend_ids]
+
     if not ids:
         return []
 
     out: list[dict] = []
 
-    # videos.list accepts at most 50 IDs at a time.
     for start in range(0, len(ids), 50):
         batch = ids[start : start + 50]
         response = requests.get(
@@ -132,6 +118,7 @@ def discover(cfg: dict) -> list[dict]:
 
             snippet = item["snippet"]
             stats = item.get("statistics", {})
+            content_details = item.get("contentDetails", {})
             published = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
             age_hours = max((now - published).total_seconds() / 3600, 1.0)
             views = int(stats.get("viewCount", 0))
@@ -175,12 +162,12 @@ def discover(cfg: dict) -> list[dict]:
                     "velocity": round(velocity, 2),
                     "viral_score": round(score, 4),
                     "license": item.get("status", {}).get("license"),
+                    "has_captions": content_details.get("caption") == "true",
+                    "duration_iso8601": content_details.get("duration"),
                     "discovery_class": discovery_class,
                     "matched_topics": sorted(source_meta["topics"]),
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                 }
             )
 
-    # The filter in choose_candidates separates trend signals from reusable sources.
-    # Sorting once here keeps both pools deterministic.
     return sorted(out, key=lambda candidate: candidate["viral_score"], reverse=True)
