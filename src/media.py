@@ -1,23 +1,36 @@
 from __future__ import annotations
+
 import subprocess
 from pathlib import Path
+
+from .ytdlp import build_ytdlp_command
+
 
 def run(cmd: list[str]) -> None:
     print("+", " ".join(map(str, cmd)))
     subprocess.run(cmd, check=True)
 
+
 def download_segment(video_url: str, start: float, end: float, workdir: Path) -> Path:
     out = workdir / "segment.mp4"
-    run([
-        "yt-dlp",
-        "--download-sections", f"*{start:.3f}-{end:.3f}",
-        "--force-keyframes-at-cuts",
-        "-f", "bv*[height<=1080]+ba/b[height<=1080]",
-        "--merge-output-format", "mp4",
-        "-o", str(out),
-        video_url,
-    ])
+    run(
+        build_ytdlp_command(
+            [
+                "--download-sections",
+                f"*{start:.3f}-{end:.3f}",
+                "--force-keyframes-at-cuts",
+                "-f",
+                "bv*[height<=1080]+ba/b[height<=1080]",
+                "--merge-output-format",
+                "mp4",
+                "-o",
+                str(out),
+            ],
+            video_url,
+        )
+    )
     return out
+
 
 def _srt_time(seconds: float) -> str:
     ms = int(round(seconds * 1000))
@@ -25,6 +38,7 @@ def _srt_time(seconds: float) -> str:
     m, rem = divmod(rem, 60000)
     s, ms = divmod(rem, 1000)
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
 
 def make_srt(text: str, duration: float, path: Path) -> Path:
     words = text.split()
@@ -45,12 +59,14 @@ def make_srt(text: str, duration: float, path: Path) -> Path:
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
+
 def probe_duration(path: Path) -> float:
     cp = subprocess.run([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=nw=1:nk=1", str(path)
     ], text=True, stdout=subprocess.PIPE, check=True)
     return float(cp.stdout.strip())
+
 
 def render_vertical(segment: Path, narration: Path, narration_text: str,
                     workdir: Path, source_volume: float = 0.10) -> Path:
