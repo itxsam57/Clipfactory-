@@ -5,6 +5,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from .ytdlp import build_ytdlp_command
+
 _WHISPER_MODEL = None
 
 
@@ -27,14 +29,13 @@ def _log_failure(label: str, result: subprocess.CompletedProcess) -> None:
 
 def _load_video_info(video_url: str) -> dict | None:
     result = _run(
-        [
-            "yt-dlp",
-            "--no-playlist",
-            "--skip-download",
-            "--dump-single-json",
-            "--no-warnings",
+        build_ytdlp_command(
+            [
+                "--skip-download",
+                "--dump-single-json",
+            ],
             video_url,
-        ]
+        )
     )
     if result.returncode != 0:
         _log_failure("yt-dlp metadata lookup failed", result)
@@ -106,20 +107,20 @@ def _clean_vtt(path: Path) -> str | None:
 def _download_caption(video_url: str, language: str, workdir: Path) -> str | None:
     template = str(workdir / "caption.%(ext)s")
     result = _run(
-        [
-            "yt-dlp",
-            "--no-playlist",
-            "--skip-download",
-            "--write-auto-subs",
-            "--write-subs",
-            "--sub-langs",
-            language,
-            "--sub-format",
-            "vtt",
-            "-o",
-            template,
+        build_ytdlp_command(
+            [
+                "--skip-download",
+                "--write-auto-subs",
+                "--write-subs",
+                "--sub-langs",
+                language,
+                "--sub-format",
+                "vtt",
+                "-o",
+                template,
+            ],
             video_url,
-        ]
+        )
     )
     if result.returncode != 0:
         _log_failure(f"Caption download failed for language {language}", result)
@@ -135,18 +136,18 @@ def _download_caption(video_url: str, language: str, workdir: Path) -> str | Non
 def _download_audio(video_url: str, workdir: Path) -> Path | None:
     template = str(workdir / "source_audio.%(ext)s")
     result = _run(
-        [
-            "yt-dlp",
-            "--no-playlist",
-            "-f",
-            "ba[abr<=96]/ba/b",
-            "-x",
-            "--audio-format",
-            "wav",
-            "-o",
-            template,
+        build_ytdlp_command(
+            [
+                "-f",
+                "ba[abr<=96]/ba/b",
+                "-x",
+                "--audio-format",
+                "wav",
+                "-o",
+                template,
+            ],
             video_url,
-        ]
+        )
     )
     if result.returncode != 0:
         _log_failure("Audio fallback download failed", result)

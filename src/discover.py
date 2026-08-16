@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import math
+
 import requests
 
 from .config import env
@@ -19,23 +20,21 @@ def _search(
     max_results: int,
     region_code: str,
     key: str,
-    *,
-    cc_only: bool,
 ) -> list[str]:
-    params = {
-        "part": "snippet",
-        "type": "video",
-        "q": topic,
-        "publishedAfter": published_after,
-        "order": "viewCount",
-        "maxResults": min(50, max_results),
-        "regionCode": region_code,
-        "key": key,
-    }
-    if cc_only:
-        params["videoLicense"] = "creativeCommon"
-
-    response = requests.get(f"{YOUTUBE_API}/search", params=params, timeout=30)
+    response = requests.get(
+        f"{YOUTUBE_API}/search",
+        params={
+            "part": "snippet",
+            "type": "video",
+            "q": topic,
+            "publishedAfter": published_after,
+            "order": "viewCount",
+            "maxResults": min(50, max_results),
+            "regionCode": region_code,
+            "key": key,
+        },
+        timeout=30,
+    )
     response.raise_for_status()
     return [
         item["id"]["videoId"]
@@ -45,64 +44,45 @@ def _search(
 
 
 def discover(cfg: dict) -> list[dict]:
-    """Discover fresh trend signals and a wider rights-cleared source pool."""
+    """Discover fresh YouTube videos strictly as trend signals.
+
+    Production footage is discovered separately by ``open_media.py``. Keeping
+    this function trend-only halves the previous search workload and prevents a
+    YouTube media URL from accidentally entering the scheduled source pool.
+    """
 
     key = env("YOUTUBE_API_KEY", required=True)
     dc = cfg["discovery"]
     now = datetime.now(timezone.utc)
     region = dc.get("region_code", "US")
+    published_after = _iso(now - timedelta(hours=dc["lookback_hours"]))
 
-    trend_after = _iso(now - timedelta(hours=dc["lookback_hours"]))
-    source_after = _iso(now - timedelta(days=dc.get("source_lookback_days", 730)))
-
-    trend_ids: list[str] = []
-    source_ids: list[str] = []
-    metadata: dict[str, dict] = {}
+    ids: list[str] = []
+    metadata: dict[str, set[str]] = {}
 
     for topic in cfg["topics"]:
         for video_id in _search(
             topic,
-            trend_after,
+            published_after,
             dc["results_per_topic"],
             region,
             key,
-            cc_only=False,
         ):
-            if video_id not in trend_ids:
-                trend_ids.append(video_id)
-            meta = metadata.setdefault(video_id, {"topics": set(), "classes": set()})
-            meta["topics"].add(topic)
-            meta["classes"].add("trend")
+            if video_id not in ids:
+                ids.append(video_id)
+            metadata.setdefault(video_id, set()).add(topic)
 
-        for video_id in _search(
-            topic,
-            source_after,
-            dc.get("source_results_per_topic", dc["results_per_topic"]),
-            region,
-            key,
-            cc_only=True,
-        ):
-            if video_id not in source_ids:
-                source_ids.append(video_id)
-            meta = metadata.setdefault(video_id, {"topics": set(), "classes": set()})
-            meta["topics"].add(topic)
-            meta["classes"].add("creative-commons-candidate")
-
-    trend_ids = trend_ids[: dc["max_candidates"]]
-    source_ids = source_ids[: dc.get("max_source_candidates", 40)]
-    ids = trend_ids + [video_id for video_id in source_ids if video_id not in trend_ids]
-
+    ids = ids[: dc["max_candidates"]]
     if not ids:
         return []
 
     out: list[dict] = []
-
     for start in range(0, len(ids), 50):
         batch = ids[start : start + 50]
         response = requests.get(
             f"{YOUTUBE_API}/videos",
             params={
-                "part": "snippet,statistics,status,contentDetails",
+                "part": "snippet,statistics,status",
                 "id": ",".join(batch),
                 "key": key,
             },
@@ -112,25 +92,17 @@ def discover(cfg: dict) -> list[dict]:
 
         for item in response.json().get("items", []):
             video_id = item["id"]
-            source_meta = metadata.get(video_id, {"topics": set(), "classes": set()})
-            classes = source_meta["classes"]
-            is_source_candidate = "creative-commons-candidate" in classes
-
             snippet = item["snippet"]
             stats = item.get("statistics", {})
-            content_details = item.get("contentDetails", {})
-            published = datetime.fromisoformat(snippet["publishedAt"].replace("Z", "+00:00"))
+            published = datetime.fromisoformat(
+                snippet["publishedAt"].replace("Z", "+00:00")
+            )
             age_hours = max((now - published).total_seconds() / 3600, 1.0)
             views = int(stats.get("viewCount", 0))
             likes = int(stats.get("likeCount", 0))
             comments = int(stats.get("commentCount", 0))
 
-            minimum_views = (
-                dc.get("source_min_views", 100)
-                if is_source_candidate
-                else dc["min_views"]
-            )
-            if views < minimum_views:
+            if views < dc["min_views"]:
                 continue
 
             velocity = views / age_hours
@@ -141,15 +113,9 @@ def discover(cfg: dict) -> list[dict]:
                 + engagement * 10
             )
 
-            if is_source_candidate and "trend" in classes:
-                discovery_class = "trend-and-creative-commons"
-            elif is_source_candidate:
-                discovery_class = "creative-commons-candidate"
-            else:
-                discovery_class = "trend"
-
             out.append(
                 {
+                    "source_type": "youtube",
                     "video_id": video_id,
                     "title": snippet["title"],
                     "channel_id": snippet["channelId"],
@@ -162,12 +128,14 @@ def discover(cfg: dict) -> list[dict]:
                     "velocity": round(velocity, 2),
                     "viral_score": round(score, 4),
                     "license": item.get("status", {}).get("license"),
-                    "has_captions": content_details.get("caption") == "true",
-                    "duration_iso8601": content_details.get("duration"),
-                    "discovery_class": discovery_class,
-                    "matched_topics": sorted(source_meta["topics"]),
+                    "discovery_class": "trend",
+                    "matched_topics": sorted(metadata.get(video_id, set())),
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                 }
             )
 
-    return sorted(out, key=lambda candidate: candidate["viral_score"], reverse=True)
+    return sorted(
+        out,
+        key=lambda candidate: candidate["viral_score"],
+        reverse=True,
+    )
