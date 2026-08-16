@@ -9,6 +9,17 @@ CFG = {
 }
 
 
+def _valid_cc_by():
+    return {
+        "source_type": "wikimedia_commons",
+        "channel_id": "wikimedia-commons",
+        "channel_title": "Example Author",
+        "license": "CC BY 4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Example.webm",
+    }
+
+
 def test_creative_commons_allowed():
     allowed, reason = is_download_allowed(
         {"channel_id": "x", "license": "creativeCommon"}, CFG
@@ -34,38 +45,22 @@ def test_normal_youtube_is_trend_only():
 
 
 def test_wikimedia_cc_by_allowed():
-    allowed, reason = is_download_allowed(
-        {
-            "source_type": "wikimedia_commons",
-            "channel_id": "wikimedia-commons",
-            "channel_title": "Example Author",
-            "license": "CC BY 4.0",
-            "license_url": "https://creativecommons.org/licenses/by/4.0/",
-        },
-        CFG,
-    )
+    allowed, reason = is_download_allowed(_valid_cc_by(), CFG)
     assert allowed
     assert reason == "wikimedia-cc-by"
 
 
 def test_wikimedia_cc_by_requires_complete_attribution_metadata():
-    base = {
-        "source_type": "wikimedia_commons",
-        "channel_id": "wikimedia-commons",
-        "channel_title": "Example Author",
-        "license": "CC BY 4.0",
-        "license_url": "https://creativecommons.org/licenses/by/4.0/",
-    }
+    base = _valid_cc_by()
 
-    missing_creator = dict(base, channel_title="")
-    allowed, reason = is_download_allowed(missing_creator, CFG)
-    assert not allowed
-    assert reason == "incomplete-cc-by-attribution"
-
-    missing_license_url = dict(base, license_url="")
-    allowed, reason = is_download_allowed(missing_license_url, CFG)
-    assert not allowed
-    assert reason == "incomplete-cc-by-attribution"
+    for broken in (
+        dict(base, channel_title=""),
+        dict(base, license_url=""),
+        dict(base, source_page_url=""),
+    ):
+        allowed, reason = is_download_allowed(broken, CFG)
+        assert not allowed
+        assert reason == "incomplete-cc-by-attribution"
 
 
 def test_wikimedia_public_domain_allowed():
