@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 from .ytdlp import build_ytdlp_command
+
+MEDIA_USER_AGENT = "ClipFactory/0.1 (https://github.com/itxsam57/Clipfactory-)"
 
 
 def run(cmd: list[str]) -> None:
@@ -33,29 +36,56 @@ def download_segment(video_url: str, start: float, end: float, workdir: Path) ->
 
 
 def probe_remote_duration(media_url: str) -> float:
-    """Read duration from a direct public media URL with FFprobe."""
+    """Read duration from a direct public media URL with bounded retries."""
 
-    cp = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=nw=1:nk=1",
-            media_url,
-        ],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-        timeout=45,
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-user_agent",
+        MEDIA_USER_AGENT,
+        "-rw_timeout",
+        "30000000",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1:nk=1",
+        media_url,
+    ]
+    delays = (0, 2, 5)
+    last_detail = "unknown ffprobe failure"
+
+    for attempt, delay in enumerate(delays, start=1):
+        if delay:
+            time.sleep(delay)
+        cp = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=45,
+        )
+        if cp.returncode == 0:
+            try:
+                duration = float(cp.stdout.strip())
+            except ValueError:
+                last_detail = f"invalid duration output: {cp.stdout!r}"
+            else:
+                if duration > 0:
+                    return duration
+                last_detail = f"invalid media duration: {duration}"
+        else:
+            last_detail = (cp.stderr or cp.stdout or "ffprobe failed").strip()
+
+        print(
+            f"Remote media probe attempt {attempt}/{len(delays)} failed: "
+            f"{last_detail[-500:]}"
+        )
+
+    raise RuntimeError(
+        f"Remote media probe failed after {len(delays)} attempts: {last_detail[-1000:]}"
     )
-    duration = float(cp.stdout.strip())
-    if duration <= 0:
-        raise RuntimeError(f"Invalid media duration: {duration}")
-    return duration
 
 
 def download_direct_segment(
@@ -64,12 +94,7 @@ def download_direct_segment(
     end: float,
     workdir: Path,
 ) -> Path:
-    """Extract a bounded direct-media segment without yt-dlp.
-
-    The input is a machine-validated Commons direct URL. FFmpeg seeks against
-    the remote object and transcodes the selected portion to a predictable MP4
-    that the existing vertical renderer can consume.
-    """
+    """Extract a bounded direct-media segment without yt-dlp."""
 
     start = max(0.0, float(start))
     end = float(end)
@@ -82,6 +107,10 @@ def download_direct_segment(
         [
             "ffmpeg",
             "-y",
+            "-user_agent",
+            MEDIA_USER_AGENT,
+            "-rw_timeout",
+            "30000000",
             "-ss",
             f"{start:.3f}",
             "-i",
