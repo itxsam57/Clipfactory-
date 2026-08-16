@@ -8,6 +8,8 @@ from google.genai import types
 
 from .config import env
 
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+
 
 def _extract_json(text: str) -> dict:
     text = text.strip()
@@ -104,7 +106,7 @@ def plan_open_short(
     """
 
     client = genai.Client(api_key=env("GEMINI_API_KEY", required=True))
-    model = env("GEMINI_MODEL", "gemini-2.5-flash")
+    model = env("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     segment_seconds = max(1.0, float(end_seconds) - float(start_seconds))
 
     source_facts = {
@@ -154,7 +156,6 @@ JSON SHAPE
         model=model,
         contents=prompt,
         config=types.GenerateContentConfig(
-            temperature=0.7,
             response_mime_type="application/json",
         ),
     )
@@ -164,7 +165,7 @@ JSON SHAPE
 
 def plan_short(video: dict, transcript: str, cfg: dict) -> dict:
     client = genai.Client(api_key=env("GEMINI_API_KEY", required=True))
-    model = env("GEMINI_MODEL", "gemini-2.5-flash")
+    model = env("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
     lo = cfg["generation"]["target_seconds_min"]
     hi = cfg["generation"]["target_seconds_max"]
 
@@ -207,7 +208,6 @@ TRANSCRIPT WITH TIMESTAMPS
         model=model,
         contents=prompt,
         config=types.GenerateContentConfig(
-            temperature=0.7,
             response_mime_type="application/json",
         ),
     )
