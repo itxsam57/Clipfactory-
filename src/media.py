@@ -32,6 +32,86 @@ def download_segment(video_url: str, start: float, end: float, workdir: Path) ->
     return out
 
 
+def probe_remote_duration(media_url: str) -> float:
+    """Read duration from a direct public media URL with FFprobe."""
+
+    cp = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            media_url,
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+        timeout=45,
+    )
+    duration = float(cp.stdout.strip())
+    if duration <= 0:
+        raise RuntimeError(f"Invalid media duration: {duration}")
+    return duration
+
+
+def download_direct_segment(
+    media_url: str,
+    start: float,
+    end: float,
+    workdir: Path,
+) -> Path:
+    """Extract a bounded direct-media segment without yt-dlp.
+
+    The input is a machine-validated Commons direct URL. FFmpeg seeks against
+    the remote object and transcodes the selected portion to a predictable MP4
+    that the existing vertical renderer can consume.
+    """
+
+    start = max(0.0, float(start))
+    end = float(end)
+    duration = end - start
+    if duration <= 0:
+        raise ValueError("Segment end must be greater than start.")
+
+    out = workdir / "segment.mp4"
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            "-i",
+            media_url,
+            "-t",
+            f"{duration:.3f}",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            str(out),
+        ]
+    )
+    return out
+
+
 def _srt_time(seconds: float) -> str:
     ms = int(round(seconds * 1000))
     h, rem = divmod(ms, 3600000)
