@@ -1,7 +1,14 @@
 from src.open_media import is_automation_safe_license, page_to_candidate
 
 
-def _page(license_name="CC BY 4.0", *, mediatype="VIDEO", mime="video/webm"):
+def _page(
+    license_name="CC BY 4.0",
+    *,
+    mediatype="VIDEO",
+    mime="video/webm",
+    artist="Example Author",
+    license_url="https://creativecommons.org/licenses/by/4.0/",
+):
     return {
         "pageid": 123,
         "title": "File:Example technology.webm",
@@ -13,8 +20,8 @@ def _page(license_name="CC BY 4.0", *, mediatype="VIDEO", mime="video/webm"):
                 "mime": mime,
                 "extmetadata": {
                     "LicenseShortName": {"value": license_name},
-                    "LicenseUrl": {"value": "https://creativecommons.org/licenses/by/4.0/"},
-                    "Artist": {"value": "Example Author"},
+                    "LicenseUrl": {"value": license_url},
+                    "Artist": {"value": artist},
                     "Credit": {"value": "Example credit"},
                     "ImageDescription": {"value": "A short technology demonstration."},
                     "AttributionRequired": {"value": "true"},
@@ -52,3 +59,18 @@ def test_page_to_candidate_returns_direct_open_video():
 def test_page_to_candidate_rejects_sharealike_and_non_video():
     assert page_to_candidate(_page("CC BY-SA 4.0"), "science", rank=0) is None
     assert page_to_candidate(_page(mediatype="BITMAP", mime="image/jpeg"), "science", rank=0) is None
+
+
+def test_cc_by_requires_creator_and_license_url_for_automatic_attribution():
+    assert page_to_candidate(_page(artist=""), "science", rank=0) is None
+    assert page_to_candidate(_page(license_url=""), "science", rank=0) is None
+
+
+def test_public_domain_does_not_require_cc_by_attribution_fields():
+    candidate = page_to_candidate(
+        _page("Public domain", artist="", license_url=""),
+        "science",
+        rank=0,
+    )
+    assert candidate is not None
+    assert candidate["license"] == "Public domain"
