@@ -3,6 +3,7 @@ from __future__ import annotations
 from html import unescape
 import re
 from typing import Iterable
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -27,30 +28,33 @@ def _normalized_license(name: str | None) -> str:
 
 
 def is_automation_safe_license(name: str | None) -> bool:
-    """Return True only for licenses ClipFactory can automate safely.
-
-    Public Domain and CC0 impose no attribution/share-alike constraint. CC BY is
-    accepted only when the candidate also carries complete attribution metadata.
-    ShareAlike, NonCommercial, and NoDerivatives variants are deliberately
-    rejected.
-    """
-
     normalized = _normalized_license(name)
     if not normalized:
         return False
-
     if normalized in {"public domain", "public-domain", "pd", "cc0", "cc0 1.0"}:
         return True
-
     if normalized.startswith("cc by"):
         blocked_markers = ("-sa", " sa", "-nc", " nc", "-nd", " nd")
         return not any(marker in normalized for marker in blocked_markers)
-
     return False
 
 
+def _canonical_commons_media_url(url: str) -> str:
+    """Return only the canonical upload.wikimedia.org resource URL.
+
+    MediaWiki may append analytics query parameters to imageinfo URLs. FFprobe
+    and FFmpeg should request the media object itself, not a tracking variant.
+    """
+
+    parts = urlsplit(url)
+    if parts.scheme != "https" or parts.netloc != "upload.wikimedia.org":
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
 def _is_direct_commons_url(url: str) -> bool:
-    return url.startswith("https://upload.wikimedia.org/")
+    parts = urlsplit(url)
+    return parts.scheme == "https" and parts.netloc == "upload.wikimedia.org"
 
 
 def _is_cc_by(license_name: str | None) -> bool:
@@ -69,20 +73,21 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
     info = infos[0]
     mime = str(info.get("mime") or "")
     mediatype = str(info.get("mediatype") or "")
-    direct_url = str(info.get("url") or "")
+    raw_direct_url = str(info.get("url") or "")
     source_page_url = str(info.get("descriptionurl") or "")
     extmetadata = info.get("extmetadata") or {}
     license_name = _meta(extmetadata, "LicenseShortName")
 
     if mediatype.upper() != "VIDEO" or not mime.startswith("video/"):
         return None
-    if not _is_direct_commons_url(direct_url):
+    if not _is_direct_commons_url(raw_direct_url):
         return None
     if not source_page_url.startswith("https://commons.wikimedia.org/"):
         return None
     if not is_automation_safe_license(license_name):
         return None
 
+    direct_url = _canonical_commons_media_url(raw_direct_url)
     page_id = page.get("pageid")
     if page_id is None:
         return None
@@ -101,15 +106,10 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
         "yes",
     }
 
-    # Automated CC BY reuse must be able to emit the creator, source, and
-    # license link. If Commons metadata is incomplete, fail closed rather than
-    # publishing an attribution that may not satisfy the license.
     if _is_cc_by(license_name) and (not artist or not license_url):
         return None
 
     creator = artist or "Wikimedia Commons contributor"
-
-    # Search rank is a relevance signal, not a claim about real-world virality.
     relevance_score = round(max(0.05, 3.0 / (1.0 + max(rank, 0) * 0.30)), 4)
 
     return {
@@ -134,11 +134,7 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
 
 
 def search_open_media(topic: str, max_results: int = 10) -> list[dict]:
-    """Search Wikimedia Commons for directly downloadable, safe-license videos."""
-
     requested = max(1, min(int(max_results), 25))
-    # Ask for extra rows because the strict license filter intentionally removes
-    # a significant portion of Commons search results.
     api_limit = min(50, max(requested * 3, 12))
     params = {
         "action": "query",

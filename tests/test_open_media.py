@@ -8,13 +8,14 @@ def _page(
     mime="video/webm",
     artist="Example Author",
     license_url="https://creativecommons.org/licenses/by/4.0/",
+    direct_url="https://upload.wikimedia.org/example.webm",
 ):
     return {
         "pageid": 123,
         "title": "File:Example technology.webm",
         "imageinfo": [
             {
-                "url": "https://upload.wikimedia.org/example.webm",
+                "url": direct_url,
                 "descriptionurl": "https://commons.wikimedia.org/wiki/File:Example_technology.webm",
                 "mediatype": mediatype,
                 "mime": mime,
@@ -54,6 +55,22 @@ def test_page_to_candidate_returns_direct_open_video():
     assert candidate["channel_title"] == "Example Author"
     assert candidate["description"] == "A short technology demonstration."
     assert candidate["matched_topics"] == ["technology explained"]
+
+
+def test_page_to_candidate_strips_tracking_query_from_direct_media_url():
+    candidate = page_to_candidate(
+        _page(
+            direct_url=(
+                "https://upload.wikimedia.org/example.webm"
+                "?utm_source=commons.wikimedia.org&utm_campaign=imageinfo"
+            )
+        ),
+        "technology explained",
+        rank=0,
+    )
+
+    assert candidate is not None
+    assert candidate["url"] == "https://upload.wikimedia.org/example.webm"
 
 
 def test_page_to_candidate_rejects_sharealike_and_non_video():
