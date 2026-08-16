@@ -9,6 +9,9 @@ def test_base_args_are_public_and_provider_ready():
     assert "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" in args
     assert "youtubepot-wpc:browser_path=/usr/bin/google-chrome" in args
 
+    assert "--js-runtimes" in args
+    assert "node" in args
+
     assert "--cookies" not in args
     assert "--cookies-from-browser" not in args
     assert "--username" not in args
@@ -23,6 +26,8 @@ def test_build_command_wraps_operation_and_url():
 
     assert command[0] == "yt-dlp"
     assert command.count("--extractor-args") == 2
+    assert "--js-runtimes" in command
+    assert "node" in command
     assert "--skip-download" in command
     assert "--dump-single-json" in command
     assert command[-1] == "https://youtu.be/abc"
@@ -37,4 +42,6 @@ def test_segment_command_keeps_provider_configuration():
     assert "--extractor-args" in command
     assert "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" in command
     assert "youtubepot-wpc:browser_path=/usr/bin/google-chrome" in command
+    assert "--js-runtimes" in command
+    assert "node" in command
     assert "--download-sections" in command
