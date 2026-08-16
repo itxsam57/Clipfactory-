@@ -74,8 +74,10 @@ jobs:
 
       - name: Verify YouTube extraction stack
         run: |
+          set -o pipefail
           yt-dlp --verbose --skip-download --simulate \
             --js-runtimes node \
+            --extractor-args "youtube:player_client=mweb" \
             --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
             --extractor-args "youtubepot-wpc:browser_path=/usr/bin/google-chrome" \
             "https://www.youtube.com/watch?v=jNQXAC9IVRw" \
