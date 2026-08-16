@@ -4,13 +4,16 @@ from __future__ import annotations
 def base_ytdlp_args() -> list[str]:
     """Arguments shared by every public YouTube yt-dlp operation.
 
-    PO-token plugins are installed by the runner. These extractor arguments
-    point the primary BgUtils provider at its local service and tell the WPC
-    fallback where Chrome lives on GitHub-hosted Ubuntu runners.
+    Node + yt-dlp-ejs handle YouTube's JavaScript challenges. PO-token plugins
+    are installed by the runner; these extractor arguments point the primary
+    BgUtils provider at its local service and make WPC available through the
+    runner's Chrome installation.
     """
 
     return [
         "--no-playlist",
+        "--js-runtimes",
+        "node",
         "--extractor-args",
         "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416",
         "--extractor-args",
