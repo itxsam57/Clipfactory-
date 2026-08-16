@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/youtube-pot-downloader
   schedule:
     - cron: "17 3 * * *"
     - cron: "17 15 * * *"
