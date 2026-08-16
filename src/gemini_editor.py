@@ -55,6 +55,9 @@ def _open_media_attribution(video: dict) -> str:
         parts.append(f"Source: {source_page}")
     if license_url:
         parts.append(f"License terms: {license_url}")
+    parts.append(
+        "Footage edited/cropped for this Short; original narration, captions, and commentary added."
+    )
     return " ".join(parts)
 
 
