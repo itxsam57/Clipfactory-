@@ -72,15 +72,15 @@ jobs:
           cat /tmp/bgutil-ping.json
           command -v google-chrome
 
-      - name: Verify yt-dlp PO-token plugins
+      - name: Verify YouTube extraction stack
         run: |
-          set +e
           yt-dlp --verbose --skip-download --simulate \
+            --js-runtimes node \
             --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
             --extractor-args "youtubepot-wpc:browser_path=/usr/bin/google-chrome" \
             "https://www.youtube.com/watch?v=jNQXAC9IVRw" \
             2>&1 | tee /tmp/ytdlp-provider-check.log
-          set -e
+          grep -E "JS runtimes:.*node" /tmp/ytdlp-provider-check.log
           grep -E "PO Token Providers:.*bgutil" /tmp/ytdlp-provider-check.log
           grep -E "PO Token Providers:.*wpc" /tmp/ytdlp-provider-check.log
 
