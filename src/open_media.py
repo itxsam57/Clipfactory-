@@ -30,9 +30,9 @@ def is_automation_safe_license(name: str | None) -> bool:
     """Return True only for licenses ClipFactory can automate safely.
 
     Public Domain and CC0 impose no attribution/share-alike constraint. CC BY is
-    accepted because attribution metadata is retained and emitted by the
-    publishing path. ShareAlike, NonCommercial, and NoDerivatives variants are
-    deliberately rejected.
+    accepted only when the candidate also carries complete attribution metadata.
+    ShareAlike, NonCommercial, and NoDerivatives variants are deliberately
+    rejected.
     """
 
     normalized = _normalized_license(name)
@@ -51,6 +51,14 @@ def is_automation_safe_license(name: str | None) -> bool:
 
 def _is_direct_commons_url(url: str) -> bool:
     return url.startswith("https://upload.wikimedia.org/")
+
+
+def _is_cc_by(license_name: str | None) -> bool:
+    normalized = _normalized_license(license_name)
+    if not normalized.startswith("cc by"):
+        return False
+    blocked_markers = ("-sa", " sa", "-nc", " nc", "-nd", " nd")
+    return not any(marker in normalized for marker in blocked_markers)
 
 
 def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
@@ -83,7 +91,7 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
     title = re.sub(r"^File:", "", raw_title, flags=re.IGNORECASE)
     title = re.sub(r"\.(?:webm|ogv|ogg|mp4|mov|mkv)$", "", title, flags=re.IGNORECASE)
 
-    artist = _meta(extmetadata, "Artist") or "Wikimedia Commons contributor"
+    artist = _meta(extmetadata, "Artist")
     description = _meta(extmetadata, "ImageDescription") or title
     credit = _meta(extmetadata, "Credit")
     license_url = _meta(extmetadata, "LicenseUrl")
@@ -93,6 +101,14 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
         "yes",
     }
 
+    # Automated CC BY reuse must be able to emit the creator, source, and
+    # license link. If Commons metadata is incomplete, fail closed rather than
+    # publishing an attribution that may not satisfy the license.
+    if _is_cc_by(license_name) and (not artist or not license_url):
+        return None
+
+    creator = artist or "Wikimedia Commons contributor"
+
     # Search rank is a relevance signal, not a claim about real-world virality.
     relevance_score = round(max(0.05, 3.0 / (1.0 + max(rank, 0) * 0.30)), 4)
 
@@ -101,7 +117,7 @@ def page_to_candidate(page: dict, topic: str, rank: int) -> dict | None:
         "video_id": f"commons-{page_id}",
         "title": title,
         "channel_id": "wikimedia-commons",
-        "channel_title": artist,
+        "channel_title": creator,
         "license": license_name,
         "license_url": license_url,
         "attribution_required": attribution_required,
