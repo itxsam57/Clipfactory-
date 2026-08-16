@@ -31,6 +31,8 @@ def test_finalize_open_plan_adds_deterministic_attribution():
     assert "CC BY 4.0" in plan["description"]
     assert "creativecommons.org/licenses/by/4.0" in plan["description"]
     assert "commons.wikimedia.org/wiki/File:Example.webm" in plan["description"]
+    assert "Footage edited" in plan["description"]
+    assert "original narration" in plan["description"]
 
 
 def test_finalize_open_plan_rejects_empty_narration():
