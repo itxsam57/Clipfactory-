@@ -32,6 +32,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install system packages
         run: |
           sudo apt-get update
@@ -41,6 +45,44 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Start YouTube PO-token provider
+        run: |
+          git clone --depth 1 --branch 1.3.1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /tmp/bgutil-pot
+          cd /tmp/bgutil-pot/server
+          npm ci
+          npx tsc
+          nohup node build/main.js > /tmp/bgutil-provider.log 2>&1 &
+          echo $! > /tmp/bgutil-provider.pid
+
+          ready=0
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:4416/ping >/tmp/bgutil-ping.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/bgutil-provider.log || true
+            exit 1
+          fi
+
+          cat /tmp/bgutil-ping.json
+          command -v google-chrome
+
+      - name: Verify yt-dlp PO-token plugins
+        run: |
+          set +e
+          yt-dlp --verbose --skip-download --simulate \
+            --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            --extractor-args "youtubepot-wpc:browser_path=/usr/bin/google-chrome" \
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw" \
+            2>&1 | tee /tmp/ytdlp-provider-check.log
+          set -e
+          grep -E "PO Token Providers:.*bgutil" /tmp/ytdlp-provider-check.log
+          grep -E "PO Token Providers:.*wpc" /tmp/ytdlp-provider-check.log
 
       - name: Run unit tests
         run: pytest -q
