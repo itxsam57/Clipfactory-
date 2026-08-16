@@ -32,10 +32,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install system packages
+      - name: Ensure FFmpeg is available
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Install Python packages
         run: |
@@ -44,6 +48,10 @@ jobs:
 
       - name: Run unit tests
         run: pytest -q
+
+      - name: Smoke test open-media source path
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/youtube-pot-downloader'
+        run: python scripts/smoke_open_media.py
 
       - name: Run factory
         if: github.event_name != 'push' || contains(github.event.head_commit.message, '[factory-test]')
